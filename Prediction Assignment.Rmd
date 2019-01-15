@@ -1,0 +1,183 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Jinkwan Hong"
+date: "2019년 1월 10일"
+output: html_document
+---
+
+---
+Prediction for case 1 ~ 20
+---
+
+less than 2000 words
+less than 5 figures
+
+# Main title?
+
+## Executive Summary
+
+In this work, we are going to answer the question of whether it's possible to use accelerometers data to classify 5 different type of barbell lift. The data was collected from 6 different participants and 4 different accelerometers on each participants. The sensors were attached to belt, forearm, arm, and dumbell. 
+
+data set can be found:  
+training data set: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+test data set: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+
+
+## Getting data set
+
+```{r }
+### Getting data
+### This chunk check the fold and see if the files exist and if only they don't exist download the file from the URL given.
+
+trainURL <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+testURL <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+dataDir <- './data/'
+destTrainFile <- 'pml_training.csv'
+destTestFile <- 'pml_testing.csv'
+destTrainPath <- paste0(dataDir, destTrainFile)
+destTestPath <- paste0(dataDir, destTestFile)
+
+if(!dir.exists(dataDir)){
+  dir.create(dataDir)
+} 
+
+if(!file.exists(paste(dataDir,destTrainFile))){
+  download.file(trainURL, destfile = destTrainPath)
+}
+
+if(!file.exists(paste(dataDir,destTestFile))){
+  download.file(testURL, destfile = destTestPath)
+}
+
+```
+```{r}
+### data loding
+### There are 160 columns in both Training and Testing data set.
+### Training data set: 19622 rows, Testing data set: 20 rows
+set.seed(42)
+trainData <- read.csv(destTrainPath)
+cvData <- read.csv(destTestPath)
+dim(trainData)
+```
+
+
+```{r echo = FALSE}
+### Importing library
+library(caret); library(Hmisc); library(ggplot2);library(rpart);library(rpart.plot);library(gbm)
+```
+
+## Features
+
+### EDA & Preprocessing
+
+```{r}
+plot(trainData$classe)
+```
+  
+
+We have enough samples of each types of barbell lifts. The data is sorted in alphabetical order by barbell lift types. More data in type A than others but the sampling should not affect data distribution.
+
+```{r}
+### Splitting data
+inTrain <- createDataPartition(y=trainData$classe, p=0.75, list = FALSE)
+training <- trainData[inTrain,]
+testing <- trainData[-inTrain,]
+```
+
+### Preprocessing
+
+### Feature selection
+
+Dropping nearly zero variance variables
+
+```{r}
+NZV <- nearZeroVar(training)
+training <- training[,-NZV]
+testing <- testing[,-NZV]
+```
+
+Dropping 1 ~ 5th columns and columns that are mostly NA
+
+```{r}
+training <- training[,-(1:5)]
+testing <- testing[,-(1:5)]
+mostNA    <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training <- training[, mostNA==FALSE]
+testing  <- testing[, mostNA==FALSE]
+dim(training)
+```
+
+
+
+## Algorithm
+
+### Random Forest
+```{r} 
+# Random Forest Model Build
+set.seed(301)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF <- train(classe ~ ., data=training, method="rf",
+                          trControl=controlRF)
+modRF$finalModel
+```
+
+```{r}
+# Prediction on Test dataset with Random Forest Model
+
+preditionRF <- predict(modRF, newdata=testing)
+confMatRF <- confusionMatrix(preditionRF, testing$classe)
+confMatRF
+accuracyRF <- confMatRF$overall['Accuracy']
+```
+
+Random Forest Accuracy: `r accuracyRF`
+
+### Decision Tree
+
+```{r}
+# model fit
+set.seed(301)
+modDT <- rpart(classe ~ ., data=training, method="class")
+#fancyRpartPlot(modDT)
+rpart.plot(modDT)
+
+```
+
+```{r}
+# prediction on Test dataset
+predictDT <- predict(modDT, newdata=testing, type="class")
+confMatDT <- confusionMatrix(predictDT, testing$classe)
+confMatDT
+accuracyDT <- confMatDT$overall['Accuracy']
+```
+Decision Tree Accuracy: `r accuracyDT`
+
+### Gradient Boosting Machine 
+
+```{r}
+# model fit
+set.seed(301)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=training, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+```
+
+```{r}
+# prediction on Test dataset
+predictGBM <- predict(modGBM, newdata=testing)
+confMatGBM <- confusionMatrix(predictGBM, testing$classe)
+confMatGBM
+accuracyGBM <- confMatGBM$overall['Accuracy']
+```
+
+Decision Tree Accuracy: `r accuracyGBM`
+
+## Applying the most accurate model to the Test Data
+
+Within this prediction Random Forest has shown the most accurate. Random Forest model will be applied to the 20 quiz data.
+
+
+```{r}
+predictCV <- predict(modRF, newdata = cvData)
+predictCV
+```
